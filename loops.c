@@ -267,6 +267,8 @@ int main() {
 	for (int i = 0; i < num_targets; i++) {
 		arr_mat[i] = input_matrix(target_row, target_col);
 		// arr_mat[i] = convolution(&kernel, &arr_mat[i]);
+		
+		// Start of Convolution
 		Matrix out;
 		int out_row_eff = arr_mat[i].row_eff - kernel.row_eff + 1;
 		int out_col_eff = arr_mat[i].col_eff - kernel.col_eff + 1;
@@ -276,21 +278,23 @@ int main() {
 		#pragma omp parallel for num_threads(8) collapse(2)
 		for (int j = 0; j < out.row_eff; j++) {
 			for (int k = 0; k < out.col_eff; k++) {
+
+				// START OF SUPPRESION
 				// out.mat[i][j] = supression_op(kernel, target, i, j);
 				int sumSupress = 0;
-				int l;
 				int rowSupress = j;
 				int colSupress = k;
 
 				#pragma omp parallel for reduction(+:sumSupress)
-				for (l = 0; l < kernel.row_eff; l++) {
+				for (int l = 0; l < kernel.row_eff; l++) {
 
 					for (int m = 0; m< kernel.col_eff; m++) {
 						int nthreads, tid;
 						nthreads = omp_get_num_threads();
 						tid = omp_get_thread_num();
 						printf("Hello world from  threadId %d out of %d threads\n", tid, nthreads);
-						sumSupress += kernel.mat[l][m] * arr_mat[l].mat[rowSupress + l][colSupress + m];
+						printf("Kernel.mat[%d][%d]: %d dan arr_mat[%d].mat[%d + %d][%d + %d]:%d\n", l, m, kernel.mat[l][m],  i, rowSupress, l, colSupress, m, arr_mat[l].mat[rowSupress+l][colSupress+m]);
+						sumSupress += kernel.mat[l][m] * arr_mat[i].mat[rowSupress + l][colSupress + m];
 						printf("Hasil sum: %d target[%d + %d][%d + %d]\n", sumSupress, rowSupress, l, colSupress, m);
 
 					}
@@ -299,11 +303,13 @@ int main() {
 						//     intermediate_sum += sum_i;
 						// }
 				}
-				printf("Out.mat[%d][%d]: %d\n",j, k, out.mat[j][k]);
+				
 				out.mat[j][k] = sumSupress;
+				printf("Out.mat[%d][%d]: %d  SumSupress: %d\n",j, k, out.mat[j][k], sumSupress);
 			}
 		}
 		arr_mat[i] = out;
+		// END OF CONVOLUTION
 		arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
 	}
 
