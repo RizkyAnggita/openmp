@@ -275,7 +275,9 @@ int main() {
 		
 		init_matrix(&out, out_row_eff, out_col_eff);
 
-		#pragma omp parallel for num_threads(8) collapse(2)
+		omp_set_nested(1);
+
+		#pragma omp parallel for num_threads(2) collapse(2)
 		for (int j = 0; j < out.row_eff; j++) {
 			for (int k = 0; k < out.col_eff; k++) {
 
@@ -284,18 +286,20 @@ int main() {
 				int sumSupress = 0;
 				int rowSupress = j;
 				int colSupress = k;
+				printf("Hello world outerloop convolution from [%d][%d] threadId %d out of %d threads\n", j,k, omp_get_thread_num(), omp_get_num_threads());
 
-				#pragma omp parallel for reduction(+:sumSupress)
+
+				#pragma omp parallel for num_threads(2) collapse(2) reduction(+:sumSupress)
 				for (int l = 0; l < kernel.row_eff; l++) {
-
 					for (int m = 0; m< kernel.col_eff; m++) {
 						int nthreads, tid;
+					
 						nthreads = omp_get_num_threads();
 						tid = omp_get_thread_num();
-						printf("Hello world from  threadId %d out of %d threads\n", tid, nthreads);
-						printf("Kernel.mat[%d][%d]: %d dan arr_mat[%d].mat[%d + %d][%d + %d]:%d\n", l, m, kernel.mat[l][m],  i, rowSupress, l, colSupress, m, arr_mat[l].mat[rowSupress+l][colSupress+m]);
+						printf("Hello world from [%d][%d] threadId %d out of %d threads\n", l,m, tid, nthreads);
+						// printf("Kernel.mat[%d][%d]: %d dan arr_mat[%d].mat[%d + %d][%d + %d]:%d\n", l, m, kernel.mat[l][m],  i, rowSupress, l, colSupress, m, arr_mat[i].mat[rowSupress+l][colSupress+m]);
 						sumSupress += kernel.mat[l][m] * arr_mat[i].mat[rowSupress + l][colSupress + m];
-						printf("Hasil sum: %d target[%d + %d][%d + %d]\n", sumSupress, rowSupress, l, colSupress, m);
+						// printf("Hasil sum: %d target[%d + %d][%d + %d]\n", sumSupress, rowSupress, l, colSupress, m);
 
 					}
 						// #pragma omp critical
@@ -303,6 +307,7 @@ int main() {
 						//     intermediate_sum += sum_i;
 						// }
 				}
+
 				
 				out.mat[j][k] = sumSupress;
 				printf("Out.mat[%d][%d]: %d  SumSupress: %d\n",j, k, out.mat[j][k], sumSupress);
