@@ -1,5 +1,6 @@
 // serial.c
-#include "omp.h"
+#include <omp.h>
+#include <mpi.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -246,6 +247,8 @@ long get_floored_mean(int *n, int length) {
 	return sum / length;
 }
 
+Matrix* arr_mat;
+Matrix kernel;
 
 
 // main() driver
@@ -255,91 +258,189 @@ int main() {
 
 	// reads kernel's row and column and initalize kernel matrix from input
 	scanf("%d %d", &kernel_row, &kernel_col);
-	Matrix kernel = input_matrix(kernel_row, kernel_col);
-	
-	// reads number of target matrices and their dimensions.
-	// initialize array of matrices and array of data ranges (int)
-	scanf("%d %d %d", &num_targets, &target_row, &target_col);
-	Matrix* arr_mat = (Matrix*)malloc(num_targets * sizeof(Matrix));
-	int arr_range[num_targets];
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-	// read each target matrix, compute their convolution matrices, and compute their data ranges
-	for (int i = 0; i < num_targets; i++) {
-		arr_mat[i] = input_matrix(target_row, target_col);
-		// arr_mat[i] = convolution(&kernel, &arr_mat[i]);
+		kernel = input_matrix(kernel_row, kernel_col);
+		// reads number of target matrices and their dimensions.
+		// initialize array of matrices and array of data ranges (int)
+		scanf("%d %d %d", &num_targets, &target_row, &target_col);
+		arr_mat = (Matrix*)malloc(num_targets * sizeof(Matrix));
 		
-		// Start of Convolution
-		Matrix out;
-		int out_row_eff = arr_mat[i].row_eff - kernel.row_eff + 1;
-		int out_col_eff = arr_mat[i].col_eff - kernel.col_eff + 1;
-		
-		init_matrix(&out, out_row_eff, out_col_eff);
-
-		omp_set_nested(1);
-
-		#pragma omp parallel for num_threads(2) collapse(2)
-		for (int j = 0; j < out.row_eff; j++) {
-			for (int k = 0; k < out.col_eff; k++) {
-
-				// START OF SUPPRESION
-				// out.mat[i][j] = supression_op(kernel, target, i, j);
-				int sumSupress = 0;
-				int rowSupress = j;
-				int colSupress = k;
-				printf("Hello world outerloop convolution from [%d][%d] threadId %d out of %d threads\n", j,k, omp_get_thread_num(), omp_get_num_threads());
-
-
-				#pragma omp parallel for num_threads(2) collapse(2) reduction(+:sumSupress)
-				for (int l = 0; l < kernel.row_eff; l++) {
-					for (int m = 0; m< kernel.col_eff; m++) {
-						int nthreads, tid;
-					
-						nthreads = omp_get_num_threads();
-						tid = omp_get_thread_num();
-						printf("Hello world from [%d][%d] threadId %d out of %d threads\n", l,m, tid, nthreads);
-						// printf("Kernel.mat[%d][%d]: %d dan arr_mat[%d].mat[%d + %d][%d + %d]:%d\n", l, m, kernel.mat[l][m],  i, rowSupress, l, colSupress, m, arr_mat[i].mat[rowSupress+l][colSupress+m]);
-						sumSupress += kernel.mat[l][m] * arr_mat[i].mat[rowSupress + l][colSupress + m];
-						// printf("Hasil sum: %d target[%d + %d][%d + %d]\n", sumSupress, rowSupress, l, colSupress, m);
-
-					}
-						// #pragma omp critical
-						// {
-						//     intermediate_sum += sum_i;
-						// }
-				}
-
-				
-				out.mat[j][k] = sumSupress;
-				printf("Out.mat[%d][%d]: %d  SumSupress: %d\n",j, k, out.mat[j][k], sumSupress);
-			}
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+		// read each target matrix, compute their convolution matrices, and compute their data ranges
+		printf("HEREE\n");
+		for (int i = 0; i < num_targets; i++) {
+			printf("UHUY: %d\n", i);
+			arr_mat[i] = input_matrix(target_row, target_col);
+			print_matrix(&arr_mat[i]);
 		}
-		arr_mat[i] = out;
-		// END OF CONVOLUTION
-		arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
+	printf("HEREE juga\n");
+
+	MPI_Init(NULL, NULL);
+	printf("HEREE juga3\n");
+	int world_size;
+	MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+
+	int world_rank;
+	MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
+	printf("HEREE juga4\n");
+	char processor_name[MPI_MAX_PROCESSOR_NAME];
+	int name_len;
+	MPI_Get_processor_name(processor_name, &name_len);
+
+	int num_procs, max_threads;
+	num_procs = omp_get_num_procs();
+	printf("Num Procs: %d\n", num_procs);
+	omp_set_num_threads(8);
+	max_threads = omp_get_max_threads();
+	printf("Max Thread: %d\n", max_threads);
+
+	int matrix_target_per_process;
+	int n_matrix_received;
+	MPI_Status status;
+
+	if (world_rank == 0) {
+		
+		int index, i;
+		matrix_target_per_process = num_targets / world_size;
+
+		if (world_size > 1)	 {
+			for (i = 1; i < world_size-1; i++)
+			{
+				index = i * matrix_target_per_process;
+
+				MPI_Send(&matrix_target_per_process, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+				MPI_Send(&arr_mat[index], matrix_target_per_process * 10002, MPI_INT, i, 0, MPI_COMM_WORLD);
+			}
+
+			// last process adds remaining elements
+			index = i * matrix_target_per_process;
+			int matrix_left = num_targets - index;
+
+			MPI_Send(&matrix_left, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+			MPI_Send(&arr_mat[index], matrix_left * 10002, MPI_INT, i, 0, MPI_COMM_WORLD);
+		}
+		// master process its own matrix
+		printf("HERE BUY!!");
+		int arr_range[matrix_target_per_process];
+		for (int i = 0; i < matrix_target_per_process; i++) {
+			// arr_mat[i] = input_matrix(target_row, target_col);
+			// arr_mat[i] = convolution(&kernel, &arr_mat[i]);
+
+			// Start of Convolution
+			Matrix out;
+			int out_row_eff = arr_mat[i].row_eff - kernel.row_eff + 1;
+			int out_col_eff = arr_mat[i].col_eff - kernel.col_eff + 1;
+			
+			init_matrix(&out, out_row_eff, out_col_eff);
+
+			omp_set_nested(1);
+
+			#pragma omp parallel for num_threads(2) collapse(2)
+			for (int j = 0; j < out.row_eff; j++) {
+				for (int k = 0; k < out.col_eff; k++) {
+
+					// START OF SUPPRESION
+					// out.mat[i][j] = supression_op(kernel, target, i, j);
+					int sumSupress = 0;
+					int rowSupress = j;
+					int colSupress = k;
+					printf("Hello world from processor %s, rank %d out of %d processors, from thread %d out of %d threads\n", processor_name, world_rank, world_size, omp_get_thread_num(), omp_get_num_threads());
+					
+
+					#pragma omp parallel for num_threads(2) collapse(2) reduction(+:sumSupress)
+					for (int l = 0; l < kernel.row_eff; l++) {
+						for (int m = 0; m< kernel.col_eff; m++) {
+							int nthreads, tid;
+						
+							nthreads = omp_get_num_threads();
+							tid = omp_get_thread_num();
+							printf("Hello world from [%d][%d] threadId %d out of %d threads\n", l,m, tid, nthreads);
+							// printf("Kernel.mat[%d][%d]: %d dan arr_mat[%d].mat[%d + %d][%d + %d]:%d\n", l, m, kernel.mat[l][m],  i, rowSupress, l, colSupress, m, arr_mat[i].mat[rowSupress+l][colSupress+m]);
+							sumSupress += kernel.mat[l][m] * arr_mat[i].mat[rowSupress + l][colSupress + m];
+							// printf("Hasil sum: %d target[%d + %d][%d + %d]\n", sumSupress, rowSupress, l, colSupress, m);
+
+						}
+					}
+
+					
+					out.mat[j][k] = sumSupress;
+					printf("Out.mat[%d][%d]: %d  SumSupress: %d\n",j, k, out.mat[j][k], sumSupress);
+				}
+			}
+			arr_mat[i] = out;
+			// END OF CONVOLUTION
+			arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
+		}
+
+		// collects partial sums from other processes
+		int arr_range_total[num_targets];
+		for (i = 1; i < world_size; i++) {
+			MPI_Recv(&arr_range_total, num_targets-matrix_target_per_process, MPI_INT,
+					MPI_ANY_SOURCE, 0,
+					MPI_COMM_WORLD,
+					&status);
+			int sender = status.MPI_SOURCE;
+		}
 	}
 
-	clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &stop);
-	double result = (stop.tv_sec - start.tv_sec) * 1e6 + (stop.tv_nsec - start.tv_nsec) / 1e3;
-	printf("Time Elapsed: %.8f\n", result);
-	// sort the data range array
-	merge_sort(arr_range, 0, num_targets - 1);
+	else {
+			printf("WORLD RANK: %d", world_rank);
+		MPI_Recv(&n_matrix_received, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
+		// Matrix* arr_mat = (Matrix*)malloc(n_matrix_received * sizeof(Matrix));
+		MPI_Recv(&arr_mat, n_matrix_received * 10002, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+		int arr_range[n_matrix_received];
+		for (int i = 0; i < n_matrix_received; i++) {
+			// arr_mat[i] = input_matrix(target_row, target_col);
+			// arr_mat[i] = convolution(&kernel, &arr_mat[i]);
 
-	for (int i = 0; i < num_targets; i++)
-	{
-		printf("MERGE SORT[%d]: %d\n", i, arr_range[i]);
+			// Start of Convolution
+			Matrix out;
+			int out_row_eff = arr_mat[i].row_eff - kernel.row_eff + 1;
+			int out_col_eff = arr_mat[i].col_eff - kernel.col_eff + 1;
+			
+			init_matrix(&out, out_row_eff, out_col_eff);
+
+			omp_set_nested(1);
+
+			#pragma omp parallel for num_threads(2) collapse(2)
+			for (int j = 0; j < out.row_eff; j++) {
+				for (int k = 0; k < out.col_eff; k++) {
+
+					// START OF SUPPRESION
+					// out.mat[i][j] = supression_op(kernel, target, i, j);
+					int sumSupress = 0;
+					int rowSupress = j;
+					int colSupress = k;
+					printf("Hello world outerloop convolution from [%d][%d] threadId %d out of %d threads\n", j,k, omp_get_thread_num(), omp_get_num_threads());
+
+					#pragma omp parallel for num_threads(2) collapse(2) reduction(+:sumSupress)
+					for (int l = 0; l < kernel.row_eff; l++) {
+						for (int m = 0; m< kernel.col_eff; m++) {
+							int nthreads, tid;
+						
+							nthreads = omp_get_num_threads();
+							tid = omp_get_thread_num();
+							printf("Hello world from [%d][%d] threadId %d out of %d threads\n", l,m, tid, nthreads);
+							// printf("Kernel.mat[%d][%d]: %d dan arr_mat[%d].mat[%d + %d][%d + %d]:%d\n", l, m, kernel.mat[l][m],  i, rowSupress, l, colSupress, m, arr_mat[i].mat[rowSupress+l][colSupress+m]);
+							sumSupress += kernel.mat[l][m] * arr_mat[i].mat[rowSupress + l][colSupress + m];
+							// printf("Hasil sum: %d target[%d + %d][%d + %d]\n", sumSupress, rowSupress, l, colSupress, m);
+
+						}
+					}
+
+					
+					out.mat[j][k] = sumSupress;
+					printf("Out.mat[%d][%d]: %d  SumSupress: %d\n",j, k, out.mat[j][k], sumSupress);
+				}
+			}
+			arr_mat[i] = out;
+			// END OF CONVOLUTION
+			arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
+		}
+
+		MPI_Send(&arr_range, n_matrix_received, MPI_INT, 0, 0, MPI_COMM_WORLD);
 	}
-	
-	
-	int median = get_median(arr_range, num_targets);	
-	int floored_mean = get_floored_mean(arr_range, num_targets); 
 
-	// print the min, max, median, and floored mean of data range array
-	printf("%d\n%d\n%d\n%d\n", 
-			arr_range[0], 
-			arr_range[num_targets - 1], 
-			median, 
-			floored_mean);
+	MPI_Finalize();
 
-	
 	return 0;
 }
