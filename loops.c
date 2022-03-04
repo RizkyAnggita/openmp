@@ -279,6 +279,7 @@ int main() {
 	int matrix_target_per_process;
 	int n_matrix_received;
 	int sizeKernel;
+	int arrRangeKonvo[num_targets];
 	MPI_Status status;
 
 	if (world_rank == 0) {
@@ -378,19 +379,25 @@ int main() {
 				}
 			}
 			arr_mat[i] = out;
+			print_matrix(&arr_mat[i]);
+
 			// END OF CONVOLUTION
 			arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
+			MPI_Gather(&arr_range[i], 1, MPI_INT, arrRangeKonvo, 1, MPI_INT, 0, MPI_COMM_WORLD);
 		}
 		printf("BAJIGUR\n");
 		// collects partial sums from other processes
 		// int arr_range_total[num_targets];
+		// int len_range_per_slave;
 		// for (i = 1; i < world_size; i++) {
-		// 	MPI_Recv(&arr_range_total, num_targets-matrix_target_per_process, MPI_INT,
+		// 	MPI_RECV(&len_range_per_slave, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		// 	MPI_Recv(&arr_range_total, len_range_per_slave, MPI_INT,
 		// 			MPI_ANY_SOURCE, 0,
 		// 			MPI_COMM_WORLD,
 		// 			&status);
 		// 	int sender = status.MPI_SOURCE;
 		// }
+
 	}
 
 	else {
@@ -457,11 +464,24 @@ int main() {
 			}
 			arr_mat[i] = out;
 			// END OF CONVOLUTION
-			arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
+			printf("HASIL KONVOLUSI: \n");
+			print_matrix(&arr_mat[i]);
+			arr_range[i] = get_matrix_datarange(&arr_mat[i]);
+			MPI_Gather(&arr_range[i], 1, MPI_INT, arrRangeKonvo, 1, MPI_INT, 0, MPI_COMM_WORLD);
 		}
 
 		// MPI_Send(&arr_range, n_matrix_received, MPI_INT, 0, 0, MPI_COMM_WORLD);
+		// MPI_Gather(&arr_range, n_matrix_received, MPI_FLOAT, sub_avgs, 1, MPI_FLOAT, 0,MPI_COMM_WORLD);
 	}
+
+	// MPI_Gather(&n_matrix_received, 1, MPI_INT, arrRangeKonvo, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    
+	if (world_rank == 0) {
+        printf("Processor %d has data: \n", world_rank);
+        for (int i=0; i<num_targets; i++)
+            printf("Range Konvo:%d\n ", arrRangeKonvo[i]);
+        printf("\n");
+    }
 
 	printf("MPI FINALIZE\n");
 
