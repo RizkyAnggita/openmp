@@ -247,32 +247,15 @@ long get_floored_mean(int *n, int length) {
 	return sum / length;
 }
 
-Matrix* arr_mat;
-Matrix kernel;
 
 
 // main() driver
 int main() {
+	Matrix* arr_mat;
+	Matrix kernel;
 	int kernel_row, kernel_col, target_row, target_col, num_targets;
 	struct timespec start, stop;
 
-	// reads kernel's row and column and initalize kernel matrix from input
-	scanf("%d %d", &kernel_row, &kernel_col);
-		kernel = input_matrix(kernel_row, kernel_col);
-		// reads number of target matrices and their dimensions.
-		// initialize array of matrices and array of data ranges (int)
-		scanf("%d %d %d", &num_targets, &target_row, &target_col);
-		arr_mat = (Matrix*)malloc(num_targets * sizeof(Matrix));
-		
-		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
-		// read each target matrix, compute their convolution matrices, and compute their data ranges
-		printf("HEREE\n");
-		for (int i = 0; i < num_targets; i++) {
-			printf("UHUY: %d\n", i);
-			arr_mat[i] = input_matrix(target_row, target_col);
-			print_matrix(&arr_mat[i]);
-		}
-	printf("HEREE juga\n");
 
 	MPI_Init(NULL, NULL);
 	printf("HEREE juga3\n");
@@ -295,24 +278,52 @@ int main() {
 
 	int matrix_target_per_process;
 	int n_matrix_received;
+	int sizeKernel;
 	MPI_Status status;
 
 	if (world_rank == 0) {
+			printf("OTW MINTA INPUT\n");
+	// reads kernel's row and column and initalize kernel matrix from input
+		scanf("%d %d", &kernel_row, &kernel_col);
+		kernel = input_matrix(kernel_row, kernel_col);
+		sizeKernel = kernel_row * kernel_col;
+		// reads number of target matrices and their dimensions.
+		// initialize array of matrices and array of data ranges (int)
+		scanf("%d %d %d", &num_targets, &target_row, &target_col);
+		arr_mat = (Matrix*)malloc(num_targets * sizeof(Matrix));
 		
+		clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &start);
+		// read each target matrix, compute their convolution matrices, and compute their data ranges
+		printf("HEREE\n");
+		for (int i = 0; i < num_targets; i++) {
+			printf("UHUY: %d\n", i);
+			arr_mat[i] = input_matrix(target_row, target_col);
+			print_matrix(&arr_mat[i]);
+		}
+		printf("HEREE juga\n");
 		int index, i;
 		matrix_target_per_process = num_targets / world_size;
+		printf("MATRIX TARGET PER PROCESS: %d\n", matrix_target_per_process);
 
 		if (world_size > 1)	 {
+			printf("WORLD SIZE > 1: world_size: %d\n", world_size);
 			for (i = 1; i < world_size-1; i++)
 			{
 				index = i * matrix_target_per_process;
-
+				printf("MSUK SINI i:%d index:%d\n", i, index);
+				
+				// MPI_Send(&sizeKernel, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+				MPI_Send(&kernel, 10002,MPI_INT, i, 0, MPI_COMM_WORLD);
 				MPI_Send(&matrix_target_per_process, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
 				MPI_Send(&arr_mat[index], matrix_target_per_process * 10002, MPI_INT, i, 0, MPI_COMM_WORLD);
 			}
+			
+			// MPI_Send(&sizeKernel, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+			MPI_Send(&kernel, 10002, MPI_INT, i, 0, MPI_COMM_WORLD);
 
 			// last process adds remaining elements
 			index = i * matrix_target_per_process;
+			printf("MSUK SINI i:%d index:%d\n", i, index);
 			int matrix_left = num_targets - index;
 
 			MPI_Send(&matrix_left, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
@@ -370,28 +381,39 @@ int main() {
 			// END OF CONVOLUTION
 			arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
 		}
-
+		printf("BAJIGUR\n");
 		// collects partial sums from other processes
-		int arr_range_total[num_targets];
-		for (i = 1; i < world_size; i++) {
-			MPI_Recv(&arr_range_total, num_targets-matrix_target_per_process, MPI_INT,
-					MPI_ANY_SOURCE, 0,
-					MPI_COMM_WORLD,
-					&status);
-			int sender = status.MPI_SOURCE;
-		}
+		// int arr_range_total[num_targets];
+		// for (i = 1; i < world_size; i++) {
+		// 	MPI_Recv(&arr_range_total, num_targets-matrix_target_per_process, MPI_INT,
+		// 			MPI_ANY_SOURCE, 0,
+		// 			MPI_COMM_WORLD,
+		// 			&status);
+		// 	int sender = status.MPI_SOURCE;
+		// }
 	}
 
 	else {
-			printf("WORLD RANK: %d", world_rank);
-		MPI_Recv(&n_matrix_received, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, &status);
-		// Matrix* arr_mat = (Matrix*)malloc(n_matrix_received * sizeof(Matrix));
-		MPI_Recv(&arr_mat, n_matrix_received * 10002, MPI_INT, 0, 0, MPI_COMM_WORLD, &status);
+		printf("WORLD RANK: %d", world_rank);
+		// MPI_Recv(&sizeKernel, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);sss
+		// Matrix kernel;
+		// init_matrix(&kernel, 2, 2);
+		MPI_Recv(&kernel, 10002, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		MPI_Recv(&n_matrix_received, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		arr_mat = (Matrix*)malloc(n_matrix_received * sizeof(Matrix));
+		MPI_Recv(arr_mat, n_matrix_received * 10002, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+		printf("MASUK SINI: n_matrix_received: %d  kernel_size: %d\n", n_matrix_received, sizeKernel);
 		int arr_range[n_matrix_received];
 		for (int i = 0; i < n_matrix_received; i++) {
 			// arr_mat[i] = input_matrix(target_row, target_col);
 			// arr_mat[i] = convolution(&kernel, &arr_mat[i]);
-
+			printf("CIHuy\n");
+			print_matrix(&kernel);
+			printf("TEST: row+eff: %d  coll_eff:%d", kernel.row_eff, kernel.col_eff);
+			printf("CIHuy\n");
+			printf("CIHuy\n");
+			print_matrix(&arr_mat[i]);
+			printf("CIHuy\n");
 			// Start of Convolution
 			Matrix out;
 			int out_row_eff = arr_mat[i].row_eff - kernel.row_eff + 1;
@@ -400,6 +422,7 @@ int main() {
 			init_matrix(&out, out_row_eff, out_col_eff);
 
 			omp_set_nested(1);
+			printf("Processor name: %s rank: %d out of %d processor\n", processor_name, world_rank, world_size);
 
 			#pragma omp parallel for num_threads(2) collapse(2)
 			for (int j = 0; j < out.row_eff; j++) {
@@ -437,8 +460,10 @@ int main() {
 			arr_range[i] = get_matrix_datarange(&arr_mat[i]); 
 		}
 
-		MPI_Send(&arr_range, n_matrix_received, MPI_INT, 0, 0, MPI_COMM_WORLD);
+		// MPI_Send(&arr_range, n_matrix_received, MPI_INT, 0, 0, MPI_COMM_WORLD);
 	}
+
+	printf("MPI FINALIZE\n");
 
 	MPI_Finalize();
 
